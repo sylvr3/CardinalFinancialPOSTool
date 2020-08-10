@@ -24,16 +24,21 @@ public class CalculateChargesUtils {
      */
     private static final Logger LOGGER = Logger.getLogger(CalculateChargesUtils.class.getName());
 
+    public static final String CHARGE_ALL_DAYS = "CHARGE_ALL";
+    public static final String CHARGE_WEEKENDS = "CHARGE_WEEKENDS";
+    public static final String CHARGE_HOLIDAYS = "CHARGE_HOLIDAYS";
+    public static final String CHARGE_BOTH = "CHARGE_BOTH";
+
+
     /**
      * Determine how many days should be charged based on whether holidays or weekend charges apply for a particular tool
      *
      * @param tool     Tool instance
      * @param checkout Checkout instance
      * @return the number of chargeable days
-     */
+     **/
 
     public static int calculateChargeableDaysCount(Tool tool, Checkout checkout) {
-
         // number of chargeable days
         int chargeableDaysCount = 0;
 
@@ -42,70 +47,10 @@ public class CalculateChargesUtils {
             LocalDate date = DateUtils.parseInputDate(checkout.getCheckoutDate()).plusDays(1);
             // Create due date instance from checkout date and rental day count
             LocalDate dueDate = DateUtils.parseInputDate(checkout.getCheckoutDate()).plusDays(checkout.getRentalDayCount());
-
+            String isHolidayChargeStr = tool.getToolType().isHolidayCharge();
+            String isWeekendChargeStr = tool.getToolType().isWeekendCharge();
             while (!date.isEqual(dueDate.plusDays(1))) {
-                // Tool has no holiday charge and weekend charge
-                if (tool.getToolType().isHolidayCharge().equals(ToolConstants.NO_CHARGE) && tool.getToolType().isWeekendCharge().equals(ToolConstants.NO_CHARGE)) {
-                    // check if the date is 4th of July
-                    if (date.getMonthValue() == 7 && date.getDayOfMonth() == 4) {
-                        if (date.getDayOfWeek() == DayOfWeek.SATURDAY || date.getDayOfWeek() == DayOfWeek.SUNDAY) {
-                            // if 4th of July is on Saturday or Sunday, weekday needs to be subtracted from chargeableDaysCount
-                            chargeableDaysCount--;
-                        }
-                    }
-
-                    // If it is Labor Day, then do not increment chargeableDaysCount
-                    else if (date.getMonthValue() == 9 && date.getDayOfWeek() == DayOfWeek.MONDAY && date.getDayOfMonth() < 8) {
-
-                    }
-
-                    // If it is the weekend, then do not increment chargeableDaysCount. If it is a weekday, then increment chargeableDaysCount
-                    else if (date.getDayOfWeek() == DayOfWeek.SATURDAY || date.getDayOfWeek() == DayOfWeek.SUNDAY) {
-
-                    } else {
-                        chargeableDaysCount++;
-                    }
-                }
-
-                // Tool has no weekend charge but it has holiday charge
-                else if (tool.getToolType().isWeekendCharge().equals(ToolConstants.NO_CHARGE) && tool.getToolType().isHolidayCharge().equals(ToolConstants.YES_CHARGE)) {
-                    // If it is the weekend, then do not increment the chargeableDaysCount. If it is a weekday, then increment chargeableDaysCount
-                    if (date.getDayOfWeek() == DayOfWeek.SATURDAY || date.getDayOfWeek() == DayOfWeek.SUNDAY) {
-                    } else {
-                        chargeableDaysCount++;
-                    }
-
-                }
-
-                // Tool has no holiday charge, but has weekend charge
-                else if (tool.getToolType().isHolidayCharge().equals(ToolConstants.NO_CHARGE) && tool.getToolType().isWeekendCharge().equals(ToolConstants.YES_CHARGE)) {
-                    // check that the date is July 4th
-                    if (date.getMonthValue() == 7 && date.getDayOfMonth() == 4) {
-                        // Check if the date is Saturday
-                        if (date.getDayOfWeek() == DayOfWeek.SATURDAY) {
-                            // if the checkout date is Friday, then they do not get a free day for Saturday
-                            if (DateUtils.parseInputDate(checkout.getCheckoutDate()).isEqual(date.minusDays(1))) {
-                                chargeableDaysCount++;
-                            }
-                        }
-                        // Check if the checkout date is Sunday
-                        else if (date.getDayOfWeek() == DayOfWeek.SUNDAY) {
-                            // if the due date is on Sunday, they do not get a free day for Sunday
-                            if (LocalDate.parse(DateUtils.calculateDueDate(checkout.getCheckoutDate(), checkout.getRentalDayCount())).isEqual(date)) {
-                                chargeableDaysCount++;
-                            }
-                        }
-                    }
-
-                    // check if the date is Labor Day
-                    else if (date.getMonthValue() == 9 && date.getDayOfWeek() == DayOfWeek.MONDAY && date.getDayOfMonth() < 8) {
-                    }
-
-                    // Increment chargeableDaysCount charged by default
-                    else {
-                        chargeableDaysCount++;
-                    }
-                }
+                chargeableDaysCount = determineWhetherThereAreCharges(isHolidayChargeStr, isWeekendChargeStr, date, checkout, chargeableDaysCount);
                 // Increment the date by 1 day
                 date = date.plusDays(1);
             }
@@ -114,6 +59,64 @@ public class CalculateChargesUtils {
             LOGGER.log(Level.WARNING, e.getMessage());
             throw new CheckoutException("Failed to count number of days charged");
         }
+    }
+
+
+    public static int determineWhetherThereAreCharges(String isThereHolidayCharge, String isThereWeekendCharge, LocalDate date, Checkout checkout, int numberOfChargeableDays) {
+        if (isThereHolidayCharge.equals(ToolConstants.NO_CHARGE) && isThereWeekendCharge.equals(ToolConstants.NO_CHARGE)) {
+            // check if the date is 4th of July
+            numberOfChargeableDays = isItFourthOfJulyAndWeekend(date, numberOfChargeableDays);
+        }
+
+        // Tool has no weekend charge but it has holiday charge
+        else if (isThereHolidayCharge.equals(ToolConstants.YES_CHARGE) && isThereWeekendCharge.equals(ToolConstants.NO_CHARGE)) {
+            // If it is the weekend, then do not increment the chargeableDaysCount. If it is a weekday, then increment chargeableDaysCount
+            numberOfChargeableDays = isItTheWeekend(date, numberOfChargeableDays);
+
+        }
+        if (isThereHolidayCharge.equals(ToolConstants.NO_CHARGE) && isThereWeekendCharge.equals(ToolConstants.YES_CHARGE)) {
+            if (isFourthOfJuly(date)) {
+                // Check if the date is Saturday or Sunday and if the due date is on Saturday......
+                // if the due date is on Sunday, they do not get a free day for Sunday
+                numberOfChargeableDays = incrementOrDecrementChargeableDaysCount(date, checkout, numberOfChargeableDays);
+            }
+
+            // If it is not Labor Day, increment chargeableDaysCount charged by default
+            else if (!isLaborDay(date)) {
+                numberOfChargeableDays++;
+
+            }
+        }
+
+        return numberOfChargeableDays;
+    }
+
+    public static int isItFourthOfJulyAndWeekend(LocalDate date, int numberOfChargeableDays) {
+        if (isFourthOfJuly(date)
+                && (date.getDayOfWeek() == DayOfWeek.SATURDAY || date.getDayOfWeek() == DayOfWeek.SUNDAY)) {
+            // if 4th of July is on Saturday or Sunday, weekday needs to be subtracted from chargeableDaysCount
+            numberOfChargeableDays--;
+        }
+        // If it is Labor Day or a weekend day, then do not increment chargeableDaysCount
+        else if (!isLaborDay(date)) {
+            numberOfChargeableDays = isItTheWeekend(date, numberOfChargeableDays);
+        }
+        return numberOfChargeableDays;
+    }
+
+    public static int isItTheWeekend(LocalDate date, int numberOfChargeableDays) {
+        if (date.getDayOfWeek() != DayOfWeek.SATURDAY && date.getDayOfWeek() != DayOfWeek.SUNDAY) {
+            numberOfChargeableDays++;
+        }
+        return numberOfChargeableDays;
+    }
+
+    public static int incrementOrDecrementChargeableDaysCount(LocalDate date, Checkout checkout, int numberOfChargeableDays) {
+        if (((date.getDayOfWeek() == DayOfWeek.SATURDAY) && (DateUtils.parseInputDate(checkout.getCheckoutDate()).isEqual(date.minusDays(1))))
+                || ((date.getDayOfWeek() == DayOfWeek.SUNDAY) && (LocalDate.parse(DateUtils.calculateDueDate(checkout.getCheckoutDate(), checkout.getRentalDayCount())).isEqual(date)))) {
+            numberOfChargeableDays++;
+        }
+        return numberOfChargeableDays;
     }
 
     /**
@@ -160,5 +163,25 @@ public class CalculateChargesUtils {
         }
         return finalCharge;
 
+    }
+
+    /**
+     * Determines whether a given date falls on the 4th of July
+     *
+     * @param date The specified date
+     * @return true if it is on 4th of July, false if it is not
+     */
+    public static boolean isFourthOfJuly(LocalDate date) {
+        return date.getMonthValue() == 7 && date.getDayOfMonth() == 4;
+    }
+
+    /**
+     * Determines whether a given date falls on Labor Day
+     *
+     * @param date The specified date
+     * @return true if it is on Labor Day, false if it is not
+     */
+    public static boolean isLaborDay(LocalDate date) {
+        return date.getMonthValue() == 9 && date.getDayOfWeek() == DayOfWeek.MONDAY && date.getDayOfMonth() < 8;
     }
 }
