@@ -1,4 +1,4 @@
-package com.cardinalfinancial.us.main;
+package com.cardinalfinancial.us;
 
 import com.cardinalfinancial.us.model.Checkout;
 import com.cardinalfinancial.us.model.RentalAgreement;
